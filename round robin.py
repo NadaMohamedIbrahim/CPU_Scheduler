@@ -52,7 +52,17 @@ def run(processes, time_quantum):
             current.turnaround_time = current.completion_time - current.arrival_time
             current.waiting_time = current.turnaround_time - current.burst_time
 
-    return processes, gantt_chart
+    total_wt = 0
+    total_tat = 0
+
+    for p in processes:
+        total_wt += p.waiting_time
+        total_tat += p.turnaround_time
+
+    avg_wt = total_wt / len(processes)
+    avg_tat = total_tat / len(processes)        
+
+    return gantt_chart, avg_wt, avg_tat
 
 # test
 # ex1
@@ -87,12 +97,11 @@ def run(processes, time_quantum):
 
 # time_quantum = 2 # 1, 10
 
-# result, gantt = run(process_list, time_quantum)
+# gantt, avg_wt, avg_tat = run(process_list, time_quantum)
 
 # print("Gantt Chart:")
 # for p in gantt:
 #     print(f"P{p[0]}: {p[1]} -> {p[2]}")
 
-# print("\nProcess Details:")
-# for p in result:
-#     print(f"P{p.pid}: WT={p.waiting_time}, TAT={p.turnaround_time}")
+# print("Average Waiting Time:", avg_wt)
+# print("Average Turnaround Time:", avg_tat)
