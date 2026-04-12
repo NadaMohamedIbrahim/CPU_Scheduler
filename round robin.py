@@ -1,17 +1,18 @@
 from collections import deque
 
 class Process:
-    def __init__(self, pid, arrival_time, burst_time):
+    def __init__(self, pid, arrival_time, burst_time, priority=None):
         self.pid = pid
         self.arrival_time = arrival_time
         self.burst_time = burst_time
         self.remaining_time = burst_time
+        self.priority = priority
         self.completion_time = 0
         self.turnaround_time = 0
         self.waiting_time = 0
 
 
-def round_robin(processes, time_quantum):
+def run(processes, time_quantum):
     time = 0
     queue = deque()
     gantt_chart = []
@@ -27,7 +28,7 @@ def round_robin(processes, time_quantum):
             i += 1
 
         if not queue:
-            time += 1
+            time = processes[i].arrival_time
             continue
 
         current = queue.popleft()
@@ -86,7 +87,7 @@ def round_robin(processes, time_quantum):
 
 # time_quantum = 2 # 1, 10
 
-# result, gantt = round_robin(process_list, time_quantum)
+# result, gantt = run(process_list, time_quantum)
 
 # print("Gantt Chart:")
 # for p in gantt:
