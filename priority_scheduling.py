@@ -1,6 +1,6 @@
-# ================================
+
 # Process Class (Given Template)
-# ================================
+
 class Process:
     def __init__(self, pid, arrival_time, burst_time, priority=None):
         self.pid = pid
@@ -14,9 +14,8 @@ class Process:
         self.waiting_time = 0
 
 
-# ================================
 # Unified Run Function (TEMPLATE)
-# ================================
+
 def run(processes, **kwargs):
     mode = kwargs.get("mode", "non_preemptive")
 
@@ -28,9 +27,9 @@ def run(processes, **kwargs):
         raise ValueError("Mode must be 'non_preemptive' or 'preemptive'")
 
 
-# ================================
+
 # Non-Preemptive Priority
-# ================================
+
 def non_preemptive(processes):
     n = len(processes)
     completed = 0
@@ -71,9 +70,9 @@ def non_preemptive(processes):
     return processes, gantt_chart
 
 
-# ================================
+
 # Preemptive Priority
-# ================================
+
 def preemptive(processes):
     n = len(processes)
     completed = 0
@@ -122,9 +121,9 @@ def preemptive(processes):
     return processes, gantt_chart
 
 
-# ================================
+
 # Helper: Print Results
-# ================================
+
 def print_results(processes, gantt, title):
     print(f"\n=== {title} ===")
     print("PID\tAT\tBT\tPR\tCT\tTAT\tWT")
@@ -137,9 +136,9 @@ def print_results(processes, gantt, title):
     print(gantt)
 
 
-# ================================
+
 # Main (Test)
-# ================================
+
 if __name__ == "__main__":
 
     process_list = [
