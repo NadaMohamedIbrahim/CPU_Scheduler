@@ -1,12 +1,4 @@
-class Process:
-    def __init__(self, pid, arrival_time, burst_time):
-        self.pid = pid
-        self.arrival_time = arrival_time
-        self.burst_time = burst_time
-        self.remaining_time = burst_time
-        self.completion_time = 0
-        self.turnaround_time = 0
-        self.waiting_time = 0
+from process import Process
 
 def sjf_non_preemptive(processes):
     time = 0
@@ -59,8 +51,6 @@ def sjf_non_preemptive(processes):
             time = next_arrival
             
     return processes, gantt_chart
-
-
 
 def sjf_preemptive(processes):
     time = 0
@@ -115,7 +105,7 @@ def sjf_preemptive(processes):
                 
                 # Close out its final block on the Gantt chart
                 gantt_chart.append((current_pid, start_time, time))
-                current_pid = None # Reset so the next process triggers a new start_time
+                current_pid = None  # Reset so the next process triggers a new start_time
         else:
             # CPU is idle
             if current_pid is not None and time > start_time:
@@ -133,38 +123,3 @@ def sjf_preemptive(processes):
                 time += 1
                 
     return processes, gantt_chart
-
-
-# --- TEST DATA ---
-if __name__ == "__main__":
-    def get_test_processes():
-        return [
-            Process(1, 0, 8),
-            Process(2, 1, 4),
-            Process(3, 2, 9),
-            Process(4, 3, 5)
-        ]
-
-    # --- TEST NON-PREEMPTIVE ---
-    print("--- SJF NON-PREEMPTIVE ---")
-    np_result, np_gantt = sjf_non_preemptive(get_test_processes())
-
-    print("Gantt Chart:")
-    for block in np_gantt:
-        print(f"P{block[0]}: {block[1]} -> {block[2]}")
-
-    print("\nProcess Details:")
-    for p in np_result:
-        print(f"P{p.pid}: WT={p.waiting_time}, TAT={p.turnaround_time}")
-
-    # --- TEST PREEMPTIVE ---
-    print("\n--- SJF PREEMPTIVE ---")
-    p_result, p_gantt = sjf_preemptive(get_test_processes())
-
-    print("Gantt Chart:")
-    for block in p_gantt:
-        print(f"P{block[0]}: {block[1]} -> {block[2]}")
-
-    print("\nProcess Details:")
-    for p in p_result:
-        print(f"P{p.pid}: WT={p.waiting_time}, TAT={p.turnaround_time}")

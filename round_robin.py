@@ -1,16 +1,5 @@
 from collections import deque
-
-class Process:
-    def __init__(self, pid, arrival_time, burst_time, priority=None):
-        self.pid = pid
-        self.arrival_time = arrival_time
-        self.burst_time = burst_time
-        self.remaining_time = burst_time
-        self.priority = priority
-        self.completion_time = 0
-        self.turnaround_time = 0
-        self.waiting_time = 0
-
+from process import Process
 
 def run(processes, time_quantum):
     time = 0
@@ -63,45 +52,3 @@ def run(processes, time_quantum):
     avg_tat = total_tat / len(processes)        
 
     return gantt_chart, avg_wt, avg_tat
-
-# test
-# ex1
-
-# process_list = [
-#     Process(1, 0, 5),
-#     Process(2, 1, 3),
-#     Process(3, 2, 8),
-#     Process(4, 3, 6)
-# ]
-
-# ex2 _ same arrival time
-
-# process_list = [
-#     Process(1, 0, 4),
-#     Process(2, 0, 3),
-#     Process(3, 0, 2)
-# ]
-
-# ex3 _ a process arrives late 
-
-# process_list = [
-#     Process(1, 0, 4),
-#     Process(2, 5, 3)
-# ]
-
-# ex4
-
-# process_list = [
-#     Process(1, 0, 4)
-# ]    
-
-# time_quantum = 2 # 1, 10
-
-# gantt, avg_wt, avg_tat = run(process_list, time_quantum)
-
-# print("Gantt Chart:")
-# for p in gantt:
-#     print(f"P{p[0]}: {p[1]} -> {p[2]}")
-
-# print("Average Waiting Time:", avg_wt)
-# print("Average Turnaround Time:", avg_tat)
