@@ -164,338 +164,324 @@ class SchedulerManager:
         self.execution_thread.start()
     
     def _run_fcfs_live(self):
-        """FCFS with 1-second ticks"""
-        processes_sorted = sorted(self.processes, key=lambda x: (x.arrival_time, x.pid))
-        
-        for p in processes_sorted:
-            if not self.is_running:
-                return
+            """FCFS with 1-second ticks (Dynamically Patched)"""
+            is_completed = {p.pid: False for p in self.processes}
+            completed = 0
             
-            # Wait for arrival time
-            while self.current_time < p.arrival_time and self.is_running:
-                while self.is_paused:
-                    time.sleep(0.1)
-                time.sleep(1)
-                self.current_time += 1
-                self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-            
-            if not self.is_running:
-                return
-            
-            start_time = self.current_time
-            
-            # Execute for burst time
-            for _ in range(p.burst_time):
-                while self.is_paused and self.is_running:
-                    time.sleep(0.1)
-                if not self.is_running:
-                    return
-                
-                p.remaining_time -= 1
-                self.current_time += 1
-                
-                # Update Gantt chart
-                if self.gantt_chart and self.gantt_chart[-1][0] == p.pid:
-                    pid, s, e = self.gantt_chart[-1]
-                    self.gantt_chart[-1] = (pid, s, self.current_time)
-                else:
-                    self.gantt_chart.append((p.pid, self.current_time - 1, self.current_time))
-                
-                self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-                time.sleep(1)
-            
-            # Process completed
-            p.completion_time = self.current_time
-            p.turnaround_time = p.completion_time - p.arrival_time
-            p.waiting_time = p.turnaround_time - p.burst_time
-            self._notify("on_process_complete", p)
-    
+            while completed < len(self.processes) and self.is_running:
+                # Update tracker if new processes arrived
+                for p in self.processes:
+                    if p.pid not in is_completed:
+                        is_completed[p.pid] = False
+                        
+                # Find the earliest arrived process that isn't completed
+                next_p = None
+                for p in self.processes:
+                    if not is_completed[p.pid]:
+                        if next_p is None or p.arrival_time < next_p.arrival_time or (p.arrival_time == next_p.arrival_time and p.pid < next_p.pid):
+                            next_p = p
+                            
+                if next_p:
+                    # Idle time waiting for arrival
+                    while self.current_time < next_p.arrival_time and self.is_running:
+                        while self.is_paused:
+                            time.sleep(0.1)
+                        time.sleep(1)
+                        self.current_time += 1
+                        self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+                    
+                    # Execute for burst time
+                    for _ in range(next_p.burst_time):
+                        while self.is_paused and self.is_running:
+                            time.sleep(0.1)
+                        if not self.is_running: return
+                        
+                        next_p.remaining_time -= 1
+                        self.current_time += 1
+                        
+                        if self.gantt_chart and self.gantt_chart[-1][0] == next_p.pid:
+                            pid, s, e = self.gantt_chart[-1]
+                            self.gantt_chart[-1] = (pid, s, self.current_time)
+                        else:
+                            self.gantt_chart.append((next_p.pid, self.current_time - 1, self.current_time))
+                        
+                        self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+                        time.sleep(1)
+                    
+                    next_p.completion_time = self.current_time
+                    next_p.turnaround_time = next_p.completion_time - next_p.arrival_time
+                    next_p.waiting_time = next_p.turnaround_time - next_p.burst_time
+                    is_completed[next_p.pid] = True
+                    completed += 1
+                    self._notify("on_process_complete", next_p)
+
     def _run_round_robin_live(self):
-        """Round Robin with 1-second ticks"""
-        from collections import deque
-        
-        processes_sorted = sorted(self.processes, key=lambda x: x.arrival_time)
-        queue = deque()
-        i = 0
-        n = len(processes_sorted)
-        
-        while (queue or i < n) and self.is_running:
-            # Add newly arrived processes
-            while i < n and processes_sorted[i].arrival_time <= self.current_time:
-                queue.append(processes_sorted[i])
-                i += 1
+            """Round Robin with 1-second ticks (Dynamically Patched)"""
+            from collections import deque
+            queue = deque()
+            enqueued_pids = set()
+            completed = 0
             
-            if not queue:
-                # Jump to next arrival
-                if i < n:
-                    self.current_time = processes_sorted[i].arrival_time
-                continue
-            
-            current = queue.popleft()
-            exec_time = min(self.time_quantum, current.remaining_time)
-            start_time = self.current_time
-            
-            for _ in range(exec_time):
-                while self.is_paused and self.is_running:
-                    time.sleep(0.1)
-                if not self.is_running:
-                    return
+            while completed < len(self.processes) and self.is_running:
+                # Check for newly arrived processes and add to queue
+                sorted_procs = sorted(self.processes, key=lambda x: (x.arrival_time, x.pid))
+                for p in sorted_procs:
+                    if p.arrival_time <= self.current_time and p.pid not in enqueued_pids and p.remaining_time > 0:
+                        queue.append(p)
+                        enqueued_pids.add(p.pid)
                 
-                current.remaining_time -= 1
-                self.current_time += 1
+                if not queue:
+                    # Idle: fast forward 1 sec
+                    while self.is_paused and self.is_running:
+                        time.sleep(0.1)
+                    time.sleep(1)
+                    self.current_time += 1
+                    self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+                    continue
                 
-                # Update Gantt
-                if self.gantt_chart and self.gantt_chart[-1][0] == current.pid:
-                    pid, s, e = self.gantt_chart[-1]
-                    self.gantt_chart[-1] = (pid, s, self.current_time)
+                current = queue.popleft()
+                exec_time = min(self.time_quantum, current.remaining_time)
+                
+                for _ in range(exec_time):
+                    while self.is_paused and self.is_running:
+                        time.sleep(0.1)
+                    if not self.is_running: return
+                    
+                    current.remaining_time -= 1
+                    self.current_time += 1
+                    
+                    if self.gantt_chart and self.gantt_chart[-1][0] == current.pid:
+                        pid, s, e = self.gantt_chart[-1]
+                        self.gantt_chart[-1] = (pid, s, self.current_time)
+                    else:
+                        self.gantt_chart.append((current.pid, self.current_time - 1, self.current_time))
+                    
+                    self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+                    time.sleep(1)
+                    
+                    # Check for arrivals DURING execution to add BEFORE re-queuing the current process
+                    sorted_procs = sorted(self.processes, key=lambda x: (x.arrival_time, x.pid))
+                    for p in sorted_procs:
+                        if p.arrival_time <= self.current_time and p.pid not in enqueued_pids and p.remaining_time > 0:
+                            queue.append(p)
+                            enqueued_pids.add(p.pid)
+                
+                if current.remaining_time > 0:
+                    queue.append(current)
                 else:
-                    self.gantt_chart.append((current.pid, self.current_time - 1, self.current_time))
-                
-                self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-                time.sleep(1)
-                
-                # Check for new arrivals during execution
-                while i < n and processes_sorted[i].arrival_time <= self.current_time:
-                    queue.append(processes_sorted[i])
-                    i += 1
-            
-            if current.remaining_time > 0:
-                queue.append(current)
-            else:
-                current.completion_time = self.current_time
-                current.turnaround_time = current.completion_time - current.arrival_time
-                current.waiting_time = current.turnaround_time - current.burst_time
-                self._notify("on_process_complete", current)
-    
+                    current.completion_time = self.current_time
+                    current.turnaround_time = current.completion_time - current.arrival_time
+                    current.waiting_time = current.turnaround_time - current.burst_time
+                    completed += 1
+                    self._notify("on_process_complete", current)
+
     def _run_sjf_preemptive_live(self):
-        """SJF Preemptive (SRTF) with 1-second ticks"""
-        n = len(self.processes)
-        completed = 0
-        is_completed = [False] * n
-        current_pid = None
-        start_time = 0
-        
-        while completed < n and self.is_running:
-            # Find process with shortest remaining time
-            idx = -1
-            min_rem = float('inf')
+            """SJF Preemptive (SRTF) with 1-second ticks (Dynamically Patched)"""
+            is_completed = {p.pid: False for p in self.processes}
+            completed = 0
+            current_pid = None
+            start_time = 0
             
-            for i in range(n):
-                p = self.processes[i]
-                if p.arrival_time <= self.current_time and not is_completed[i]:
-                    if p.remaining_time < min_rem:
-                        min_rem = p.remaining_time
-                        idx = i
-            
-            if idx != -1:
-                p = self.processes[idx]
+            while completed < len(self.processes) and self.is_running:
+                for p in self.processes:
+                    if p.pid not in is_completed:
+                        is_completed[p.pid] = False
+
+                min_rem = float('inf')
+                process_to_run = None
                 
-                # Context switch handling
-                if current_pid != p.pid:
+                for p in self.processes:
+                    if p.arrival_time <= self.current_time and not is_completed[p.pid]:
+                        if p.remaining_time < min_rem:
+                            min_rem = p.remaining_time
+                            process_to_run = p
+                
+                if process_to_run is not None:
+                    p = process_to_run
+                    if current_pid != p.pid:
+                        if current_pid is not None and self.current_time > start_time:
+                            self.gantt_chart.append((current_pid, start_time, self.current_time))
+                        current_pid = p.pid
+                        start_time = self.current_time
+                    
+                    while self.is_paused and self.is_running:
+                        time.sleep(0.1)
+                    
+                    p.remaining_time -= 1
+                    self.current_time += 1
+                    self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+                    time.sleep(1)
+                    
+                    if p.remaining_time == 0:
+                        is_completed[p.pid] = True
+                        completed += 1
+                        p.completion_time = self.current_time
+                        p.turnaround_time = p.completion_time - p.arrival_time
+                        p.waiting_time = p.turnaround_time - p.burst_time
+                        self.gantt_chart.append((current_pid, start_time, self.current_time))
+                        current_pid = None
+                        self._notify("on_process_complete", p)
+                else:
                     if current_pid is not None and self.current_time > start_time:
                         self.gantt_chart.append((current_pid, start_time, self.current_time))
-                    current_pid = p.pid
-                    start_time = self.current_time
-                
-                # Execute 1 unit
-                while self.is_paused and self.is_running:
-                    time.sleep(0.1)
-                
-                p.remaining_time -= 1
-                self.current_time += 1
-                
-                self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-                time.sleep(1)
-                
-                if p.remaining_time == 0:
-                    is_completed[idx] = True
-                    completed += 1
-                    p.completion_time = self.current_time
-                    p.turnaround_time = p.completion_time - p.arrival_time
-                    p.waiting_time = p.turnaround_time - p.burst_time
-                    self.gantt_chart.append((current_pid, start_time, self.current_time))
-                    current_pid = None
-                    self._notify("on_process_complete", p)
-            else:
-                # Idle
-                if current_pid is not None and self.current_time > start_time:
-                    self.gantt_chart.append((current_pid, start_time, self.current_time))
-                    current_pid = None
-                time.sleep(1)
-                self.current_time += 1
-                self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-    
+                        current_pid = None
+                    time.sleep(1)
+                    self.current_time += 1
+                    self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+
     def _run_priority_preemptive_live(self):
-        """Priority Preemptive with 1-second ticks"""
-        n = len(self.processes)
-        completed = 0
-        is_completed = [False] * n
-        current_pid = None
-        start_time = 0
-        
-        while completed < n and self.is_running:
-            # Find process with highest priority (smallest number)
-            idx = -1
-            highest_priority = float('inf')
+            """Priority Preemptive with 1-second ticks (Dynamically Patched)"""
+            is_completed = {p.pid: False for p in self.processes}
+            completed = 0
+            current_pid = None
+            start_time = 0
             
-            for i in range(n):
-                p = self.processes[i]
-                if p.arrival_time <= self.current_time and not is_completed[i] and p.remaining_time > 0:
-                    if p.priority < highest_priority:
-                        highest_priority = p.priority
-                        idx = i
-            
-            if idx != -1:
-                p = self.processes[idx]
+            while completed < len(self.processes) and self.is_running:
+                for p in self.processes:
+                    if p.pid not in is_completed:
+                        is_completed[p.pid] = False
+
+                highest_priority = float('inf')
+                process_to_run = None
                 
-                if current_pid != p.pid:
+                for p in self.processes:
+                    if p.arrival_time <= self.current_time and not is_completed[p.pid] and p.remaining_time > 0:
+                        if p.priority < highest_priority:
+                            highest_priority = p.priority
+                            process_to_run = p
+                
+                if process_to_run is not None:
+                    p = process_to_run
+                    if current_pid != p.pid:
+                        if current_pid is not None and self.current_time > start_time:
+                            self.gantt_chart.append((current_pid, start_time, self.current_time))
+                        current_pid = p.pid
+                        start_time = self.current_time
+                    
+                    while self.is_paused and self.is_running:
+                        time.sleep(0.1)
+                    
+                    p.remaining_time -= 1
+                    self.current_time += 1
+                    self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+                    time.sleep(1)
+                    
+                    if p.remaining_time == 0:
+                        is_completed[p.pid] = True
+                        completed += 1
+                        p.completion_time = self.current_time
+                        p.turnaround_time = p.completion_time - p.arrival_time
+                        p.waiting_time = p.turnaround_time - p.burst_time
+                        self.gantt_chart.append((current_pid, start_time, self.current_time))
+                        current_pid = None
+                        self._notify("on_process_complete", p)
+                else:
                     if current_pid is not None and self.current_time > start_time:
                         self.gantt_chart.append((current_pid, start_time, self.current_time))
-                    current_pid = p.pid
-                    start_time = self.current_time
+                        current_pid = None
+                    time.sleep(1)
+                    self.current_time += 1
+                    self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+
+    def _run_sjf_non_preemptive_live(self):
+            """SJF Non-Preemptive with 1-second ticks (Dynamically Patched)"""
+            is_completed = {p.pid: False for p in self.processes}
+            completed = 0
+            
+            while completed < len(self.processes) and self.is_running:
+                for p in self.processes:
+                    if p.pid not in is_completed:
+                        is_completed[p.pid] = False
+
+                min_burst = float('inf')
+                process_to_run = None
                 
-                while self.is_paused and self.is_running:
-                    time.sleep(0.1)
+                for p in self.processes:
+                    if p.arrival_time <= self.current_time and not is_completed[p.pid]:
+                        if p.burst_time < min_burst:
+                            min_burst = p.burst_time
+                            process_to_run = p
                 
-                p.remaining_time -= 1
-                self.current_time += 1
-                
-                self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-                time.sleep(1)
-                
-                if p.remaining_time == 0:
-                    is_completed[idx] = True
-                    completed += 1
+                if process_to_run is not None:
+                    p = process_to_run
+                    
+                    for _ in range(p.burst_time):
+                        while self.is_paused and self.is_running:
+                            time.sleep(0.1)
+                        if not self.is_running: return
+                        
+                        p.remaining_time -= 1
+                        self.current_time += 1
+                        
+                        if self.gantt_chart and self.gantt_chart[-1][0] == p.pid:
+                            pid, s, e = self.gantt_chart[-1]
+                            self.gantt_chart[-1] = (pid, s, self.current_time)
+                        else:
+                            self.gantt_chart.append((p.pid, self.current_time - 1, self.current_time))
+                        
+                        self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+                        time.sleep(1)
+                    
                     p.completion_time = self.current_time
                     p.turnaround_time = p.completion_time - p.arrival_time
                     p.waiting_time = p.turnaround_time - p.burst_time
-                    self.gantt_chart.append((current_pid, start_time, self.current_time))
-                    current_pid = None
+                    is_completed[p.pid] = True
+                    completed += 1
                     self._notify("on_process_complete", p)
-            else:
-                if current_pid is not None and self.current_time > start_time:
-                    self.gantt_chart.append((current_pid, start_time, self.current_time))
-                    current_pid = None
-                time.sleep(1)
-                self.current_time += 1
-                self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-    
-    def _run_sjf_non_preemptive_live(self):
-        """SJF Non-Preemptive with 1-second ticks"""
-        n = len(self.processes)
-        completed = 0
-        is_completed = [False] * n
-        
-        while completed < n and self.is_running:
-            # Find shortest job among arrived processes
-            idx = -1
-            min_burst = float('inf')
-            
-            for i in range(n):
-                p = self.processes[i]
-                if p.arrival_time <= self.current_time and not is_completed[i]:
-                    if p.burst_time < min_burst:
-                        min_burst = p.burst_time
-                        idx = i
-            
-            if idx != -1:
-                p = self.processes[idx]
-                start_time = self.current_time
-                
-                # Execute fully
-                for _ in range(p.burst_time):
-                    while self.is_paused and self.is_running:
-                        time.sleep(0.1)
-                    if not self.is_running:
-                        return
-                    
-                    p.remaining_time -= 1
-                    self.current_time += 1
-                    
-                    if self.gantt_chart and self.gantt_chart[-1][0] == p.pid:
-                        pid, s, e = self.gantt_chart[-1]
-                        self.gantt_chart[-1] = (pid, s, self.current_time)
-                    else:
-                        self.gantt_chart.append((p.pid, self.current_time - 1, self.current_time))
-                    
-                    self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-                    time.sleep(1)
-                
-                p.completion_time = self.current_time
-                p.turnaround_time = p.completion_time - p.arrival_time
-                p.waiting_time = p.turnaround_time - p.burst_time
-                is_completed[idx] = True
-                completed += 1
-                self._notify("on_process_complete", p)
-            else:
-                # Idle - jump to next arrival
-                next_arrival = float('inf')
-                for i in range(n):
-                    if not is_completed[i] and self.processes[i].arrival_time < next_arrival:
-                        next_arrival = self.processes[i].arrival_time
-                
-                while self.current_time < next_arrival and self.is_running:
+                else:
                     time.sleep(1)
                     self.current_time += 1
                     self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-    
+
     def _run_priority_non_preemptive_live(self):
-        """Priority Non-Preemptive with 1-second ticks"""
-        n = len(self.processes)
-        completed = 0
-        is_completed = [False] * n
-        
-        while completed < n and self.is_running:
-            # Find highest priority among arrived processes
-            idx = -1
-            highest_priority = float('inf')
+            """Priority Non-Preemptive with 1-second ticks (Dynamically Patched)"""
+            is_completed = {p.pid: False for p in self.processes}
+            completed = 0
             
-            for i in range(n):
-                p = self.processes[i]
-                if p.arrival_time <= self.current_time and not is_completed[i]:
-                    if p.priority < highest_priority:
-                        highest_priority = p.priority
-                        idx = i
-            
-            if idx != -1:
-                p = self.processes[idx]
-                start_time = self.current_time
+            while completed < len(self.processes) and self.is_running:
+                for p in self.processes:
+                    if p.pid not in is_completed:
+                        is_completed[p.pid] = False
+
+                highest_priority = float('inf')
+                process_to_run = None
                 
-                for _ in range(p.burst_time):
-                    while self.is_paused and self.is_running:
-                        time.sleep(0.1)
-                    if not self.is_running:
-                        return
-                    
-                    p.remaining_time -= 1
-                    self.current_time += 1
-                    
-                    if self.gantt_chart and self.gantt_chart[-1][0] == p.pid:
-                        pid, s, e = self.gantt_chart[-1]
-                        self.gantt_chart[-1] = (pid, s, self.current_time)
-                    else:
-                        self.gantt_chart.append((p.pid, self.current_time - 1, self.current_time))
-                    
-                    self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-                    time.sleep(1)
+                for p in self.processes:
+                    if p.arrival_time <= self.current_time and not is_completed[p.pid]:
+                        if p.priority < highest_priority:
+                            highest_priority = p.priority
+                            process_to_run = p
                 
-                p.completion_time = self.current_time
-                p.turnaround_time = p.completion_time - p.arrival_time
-                p.waiting_time = p.turnaround_time - p.burst_time
-                is_completed[idx] = True
-                completed += 1
-                self._notify("on_process_complete", p)
-            else:
-                next_arrival = float('inf')
-                for i in range(n):
-                    if not is_completed[i] and self.processes[i].arrival_time < next_arrival:
-                        next_arrival = self.processes[i].arrival_time
-                
-                while self.current_time < next_arrival and self.is_running:
+                if process_to_run is not None:
+                    p = process_to_run
+                    
+                    for _ in range(p.burst_time):
+                        while self.is_paused and self.is_running:
+                            time.sleep(0.1)
+                        if not self.is_running: return
+                        
+                        p.remaining_time -= 1
+                        self.current_time += 1
+                        
+                        if self.gantt_chart and self.gantt_chart[-1][0] == p.pid:
+                            pid, s, e = self.gantt_chart[-1]
+                            self.gantt_chart[-1] = (pid, s, self.current_time)
+                        else:
+                            self.gantt_chart.append((p.pid, self.current_time - 1, self.current_time))
+                        
+                        self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
+                        time.sleep(1)
+                    
+                    p.completion_time = self.current_time
+                    p.turnaround_time = p.completion_time - p.arrival_time
+                    p.waiting_time = p.turnaround_time - p.burst_time
+                    is_completed[p.pid] = True
+                    completed += 1
+                    self._notify("on_process_complete", p)
+                else:
                     time.sleep(1)
                     self.current_time += 1
                     self._notify("on_tick", {"time": self.current_time, "processes": self.processes})
-    
     # ============ Control Methods ============
     def pause(self):
         """Pause live execution"""
